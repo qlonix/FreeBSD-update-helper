@@ -395,7 +395,8 @@ cmd_self_update() {
 check_dialog() {
 	if ! command -v dialog > /dev/null 2>&1; then
 		log_error "'dialog' コマンドが見つかりません。"
-		log_info "インストール: pkg install -y dialog4ports または pkg install -y dialog"
+		log_info "FreeBSD のベースシステムに標準搭載されているはずです。"
+		log_info "メニューなしの CLI モードで実行してください: $(basename "$0") help"
 		exit 1
 	fi
 }

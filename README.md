@@ -23,13 +23,7 @@ FreeBSD のホスト環境と Jail 環境に対して、`freebsd-update` およ�
 | `freebsd-update` | FreeBSD ベースシステム更新 |
 | `pkg` | パッケージ管理 |
 | `jls` / `jexec` | Jail 操作 |
-| `dialog` | メニュー UI (オプション) |
-
-`dialog` のインストール:
-
-```sh
-pkg install -y dialog
-```
+| `dialog` | メニュー UI (FreeBSD ベースシステムに標準搭載、追加インストール不要) |
 
 ---
 
