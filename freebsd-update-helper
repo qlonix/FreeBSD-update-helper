@@ -26,7 +26,7 @@
 VERSION="1.0.0"
 
 # --- GitHub 設定 (self-update 用) ---
-GITHUB_USER="your-github-username"
+GITHUB_USER="qlonix"
 GITHUB_REPO="FreeBSD-update-helper"
 GITHUB_BRANCH="main"
 SELF_URL="https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/${GITHUB_BRANCH}/freebsd-update-helper"

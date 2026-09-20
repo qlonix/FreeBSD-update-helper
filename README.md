@@ -37,7 +37,7 @@ pkg install -y dialog
 
 ```sh
 # リポジトリをクローン
-git clone https://github.com/your-github-username/FreeBSD-update-helper.git
+git clone https://github.com/qlonix/FreeBSD-update-helper.git
 
 # スクリプトをシステムパスに配置
 install -m 755 FreeBSD-update-helper/freebsd-update-helper /usr/local/sbin/freebsd-update-helper
