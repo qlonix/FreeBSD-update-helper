@@ -23,7 +23,12 @@ FreeBSD のホスト環境と Jail 環境に対して、`freebsd-update` およ�
 | `freebsd-update` | FreeBSD ベースシステム更新 |
 | `pkg` | パッケージ管理 |
 | `jls` / `jexec` | Jail 操作 |
-| `dialog` | メニュー UI (FreeBSD ベースシステムに標準搭載、追加インストール不要) |
+| `bsddialog` または `dialog` | メニュー UI (優先順位: `bsddialog` → `dialog` → プレーンテキスト) |
+
+> **メニュー UI について**
+> - FreeBSD 13.1 以降: `bsddialog` がベースシステムに標準搭載されています (`/usr/bin/bsddialog`)
+> - FreeBSD 13.0 以前: `dialog` がベースシステムに含まれています
+> - どちらも存在しない場合: 自動的にプレーンテキストのメニューにフォールバックします (追加インストール不要)
 
 ---
 

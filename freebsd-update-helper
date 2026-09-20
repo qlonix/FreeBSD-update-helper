@@ -23,16 +23,28 @@
 # ==============================================================================
 
 # --- バージョン情報 ---
-VERSION="1.0.0"
+VERSION="1.1.0"
 
 # --- GitHub 設定 (self-update 用) ---
 GITHUB_USER="qlonix"
 GITHUB_REPO="FreeBSD-update-helper"
-GITHUB_BRANCH="main"
+GITHUB_BRANCH="master"
 SELF_URL="https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/${GITHUB_BRANCH}/freebsd-update-helper"
 
 # --- スクリプト自身のパス ---
 SELF_PATH="$(realpath "$0")"
+
+# ==============================================================================
+# ダイアログコマンドの検出
+# 優先順位: bsddialog (FreeBSD 13.1+ ベースシステム) > dialog > なし (テキスト UI)
+# ==============================================================================
+_DIALOG_CMD=""
+if command -v bsddialog > /dev/null 2>&1; then
+	_DIALOG_CMD="bsddialog"
+elif command -v dialog > /dev/null 2>&1; then
+	_DIALOG_CMD="dialog"
+fi
+# _DIALOG_CMD が空のときはプレーンテキストメニューを使用する
 
 # ==============================================================================
 # ユーティリティ関数
@@ -120,7 +132,7 @@ get_hostname() {
 do_fetch_host() {
 	print_section "ホスト ($(get_hostname)) - freebsd-update fetch"
 	freebsd-update fetch
-	local _ret=$?
+	_ret=$?
 	if [ ${_ret} -eq 0 ]; then
 		log_ok "ホストの freebsd-update fetch が完了しました。"
 	else
@@ -147,7 +159,7 @@ do_fetch_jail() {
 
 	print_section "Jail: ${_jail} - freebsd-update fetch"
 	freebsd-update -b "${_path}" fetch
-	local _ret=$?
+	_ret=$?
 	if [ ${_ret} -eq 0 ]; then
 		log_ok "Jail '${_jail}' の freebsd-update fetch が完了しました。"
 	else
@@ -160,7 +172,7 @@ do_fetch_jail() {
 do_install_host() {
 	print_section "ホスト ($(get_hostname)) - freebsd-update install"
 	freebsd-update install
-	local _ret=$?
+	_ret=$?
 	if [ ${_ret} -eq 0 ]; then
 		log_ok "ホストの freebsd-update install が完了しました。"
 	else
@@ -187,7 +199,7 @@ do_install_jail() {
 
 	print_section "Jail: ${_jail} - freebsd-update install"
 	freebsd-update -b "${_path}" install
-	local _ret=$?
+	_ret=$?
 	if [ ${_ret} -eq 0 ]; then
 		log_ok "Jail '${_jail}' の freebsd-update install が完了しました。"
 	else
@@ -200,7 +212,7 @@ do_install_jail() {
 do_pkg_update_host() {
 	print_section "ホスト ($(get_hostname)) - pkg update"
 	pkg update
-	local _ret=$?
+	_ret=$?
 	if [ ${_ret} -eq 0 ]; then
 		log_ok "ホストの pkg update が完了しました。"
 	else
@@ -221,7 +233,7 @@ do_pkg_update_jail() {
 
 	print_section "Jail: ${_jail} - pkg update"
 	jexec "${_jail}" pkg update
-	local _ret=$?
+	_ret=$?
 	if [ ${_ret} -eq 0 ]; then
 		log_ok "Jail '${_jail}' の pkg update が完了しました。"
 	else
@@ -234,7 +246,7 @@ do_pkg_update_jail() {
 do_pkg_upgrade_host() {
 	print_section "ホスト ($(get_hostname)) - pkg upgrade"
 	pkg upgrade -y
-	local _ret=$?
+	_ret=$?
 	if [ ${_ret} -eq 0 ]; then
 		log_ok "ホストの pkg upgrade が完了しました。"
 	else
@@ -255,7 +267,7 @@ do_pkg_upgrade_jail() {
 
 	print_section "Jail: ${_jail} - pkg upgrade"
 	jexec "${_jail}" pkg upgrade -y
-	local _ret=$?
+	_ret=$?
 	if [ ${_ret} -eq 0 ]; then
 		log_ok "Jail '${_jail}' の pkg upgrade が完了しました。"
 	else
@@ -388,44 +400,31 @@ cmd_self_update() {
 }
 
 # ==============================================================================
-# メニュー UI (dialog コマンドを使用)
+# メニュー UI
+# bsddialog (FreeBSD 13.1+ 標準) > dialog > プレーンテキスト の順で自動選択
 # ==============================================================================
 
-# dialog コマンドが使えるか確認
-check_dialog() {
-	if ! command -v dialog > /dev/null 2>&1; then
-		log_error "'dialog' コマンドが見つかりません。"
-		log_info "FreeBSD のベースシステムに標準搭載されているはずです。"
-		log_info "メニューなしの CLI モードで実行してください: $(basename "$0") help"
-		exit 1
-	fi
-}
-
-# チェックリストから Jail を選択させる (複数選択)
-# 引数: タイトル文字列
-# 返却: 選択した Jail 名の改行区切りリスト (標準出力)
-menu_select_jails() {
+# --- ダイアログ版: Jail チェックリスト (複数選択) ---
+_dlg_select_jails() {
 	_title="$1"
 	_jails="$(get_running_jails)"
 
-	# Jail が存在しない場合
-	if [ -z "$(echo "${_jails}" | tr -d ' ')" ]; then
-		dialog --msgbox "実行中の Jail がありません。" 7 40
+	if [ -z "$(printf '%s' "${_jails}" | tr -d ' ')" ]; then
+		${_DIALOG_CMD} --msgbox "実行中の Jail がありません。" 7 40
 		return 1
 	fi
 
-	# checklist の項目を構築 (name desc status)
+	# checklist 項目を構築 (tag item status)
 	_items=""
 	for _j in ${_jails}; do
 		_items="${_items} ${_j} 'Jail' off"
 	done
 
-	# ホストも選択肢に含める
 	_tmpout="$(mktemp /tmp/fbsd-menu.XXXXXX)"
-	eval dialog \
+	eval ${_DIALOG_CMD} \
 		--clear \
 		--title "'${_title}'" \
-		--checklist "'対象を選択してください (スペースキーで選択):'" \
+		--checklist "'対象を選択 (スペースで選択/解除、Enter で確定):'" \
 		20 60 10 \
 		"host" "'ホスト環境'" "off" \
 		${_items} \
@@ -437,26 +436,24 @@ menu_select_jails() {
 		return 1
 	fi
 
-	# 選択結果を読み取り (dialog はダブルクォートで囲んで出力する場合がある)
+	# bsddialog/dialog ともにダブルクォートで出力する場合があるため除去
 	_selected="$(cat "${_tmpout}" | tr -d '"')"
 	rm -f "${_tmpout}"
 	printf '%s' "${_selected}"
-	return 0
 }
 
-# "全て" か "指定" かを選ぶサブメニュー
-# 戻り値: ターゲットリスト (スペース区切り)
-menu_select_targets() {
+# --- ダイアログ版: 全て/個別 サブメニュー ---
+_dlg_select_targets() {
 	_title="$1"
 	_tmpout="$(mktemp /tmp/fbsd-menu.XXXXXX)"
 
-	dialog \
+	${_DIALOG_CMD} \
 		--clear \
 		--title "${_title}" \
 		--menu "対象を選択してください:" \
-		15 50 3 \
+		12 52 2 \
 		"all"    "全ての環境 (ホスト + 全 Jail)" \
-		"select" "Jail を個別に選択" \
+		"select" "個別に選択" \
 		2>"${_tmpout}"
 	_ret=$?
 
@@ -471,28 +468,90 @@ menu_select_targets() {
 	if [ "${_choice}" = "all" ]; then
 		printf '%s' "$(build_all_targets)"
 	else
-		_selected="$(menu_select_jails "${_title}")" || return 1
-		if [ -z "${_selected}" ]; then
-			dialog --msgbox "対象が選択されていません。" 7 40
+		_sel="$(_dlg_select_jails "${_title}")" || return 1
+		if [ -z "${_sel}" ]; then
+			${_DIALOG_CMD} --msgbox "対象が選択されていません。" 7 40
 			return 1
 		fi
-		printf '%s' "${_selected}"
+		printf '%s' "${_sel}"
 	fi
-	return 0
 }
 
-# メインメニューを表示して操作を実行する
-menu_main() {
-	check_dialog
+# --- テキスト版: Jail 番号選択 ---
+_text_select_jails() {
+	_jails="$(get_running_jails)"
+	_all_targets="host ${_jails}"
 
+	printf '\n対象を番号で選択 (複数はスペース区切り、例: 1 3):\n'
+	_i=1
+	for _t in ${_all_targets}; do
+		printf '  %d) %s\n' "${_i}" "${_t}"
+		_i=$(( _i + 1 ))
+	done
+	printf '  0) キャンセル\n'
+	printf '選択: '
+	read -r _input < /dev/tty
+
+	if [ -z "${_input}" ] || [ "${_input}" = "0" ]; then
+		return 1
+	fi
+
+	# 入力番号をターゲット名に変換
+	_result=""
+	for _num in ${_input}; do
+		_i=1
+		for _t in ${_all_targets}; do
+			if [ "${_num}" = "${_i}" ]; then
+				_result="${_result} ${_t}"
+				break
+			fi
+			_i=$(( _i + 1 ))
+		done
+	done
+
+	if [ -z "${_result}" ]; then
+		printf '対象が選択されていません。\n'
+		return 1
+	fi
+	printf '%s' "${_result}"
+}
+
+# --- テキスト版: 全て/個別 サブメニュー ---
+_text_select_targets() {
+	_title="$1"
+	printf '\n[%s] 対象を選択:\n' "${_title}"
+	printf '  1) 全ての環境 (ホスト + 全 Jail)\n'
+	printf '  2) 個別に選択\n'
+	printf '  0) キャンセル\n'
+	printf '選択: '
+	read -r _ch < /dev/tty
+
+	case "${_ch}" in
+		1) printf '%s' "$(build_all_targets)" ;;
+		2) _text_select_jails || return 1 ;;
+		*) return 1 ;;
+	esac
+}
+
+# --- 統合: ダイアログ有無で自動切替 ---
+menu_select_targets() {
+	if [ -n "${_DIALOG_CMD}" ]; then
+		_dlg_select_targets "$1"
+	else
+		_text_select_targets "$1"
+	fi
+}
+
+# --- ダイアログ版メインメニュー ---
+_menu_main_dialog() {
 	while true; do
 		_tmpout="$(mktemp /tmp/fbsd-menu.XXXXXX)"
 
-		dialog \
+		${_DIALOG_CMD} \
 			--clear \
 			--title "FreeBSD Update Helper v${VERSION}" \
 			--menu "操作を選択してください:" \
-			18 60 9 \
+			18 64 8 \
 			"1" "freebsd-update fetch" \
 			"2" "freebsd-update install" \
 			"3" "pkg update" \
@@ -517,44 +576,106 @@ menu_main() {
 		case "${_choice}" in
 			1)
 				_targets="$(menu_select_targets "freebsd-update fetch")" || continue
-				clear
-				run_fetch ${_targets}
-				printf '\n'; read -r _dummy < /dev/tty
+				clear; run_fetch ${_targets}
+				printf '\n[Enter] でメニューに戻る: '; read -r _d < /dev/tty
 				;;
 			2)
 				_targets="$(menu_select_targets "freebsd-update install")" || continue
-				clear
-				run_install ${_targets}
-				printf '\n'; read -r _dummy < /dev/tty
+				clear; run_install ${_targets}
+				printf '\n[Enter] でメニューに戻る: '; read -r _d < /dev/tty
 				;;
 			3)
 				_targets="$(menu_select_targets "pkg update")" || continue
-				clear
-				run_pkg_update ${_targets}
-				printf '\n'; read -r _dummy < /dev/tty
+				clear; run_pkg_update ${_targets}
+				printf '\n[Enter] でメニューに戻る: '; read -r _d < /dev/tty
 				;;
 			4)
 				_targets="$(menu_select_targets "pkg upgrade")" || continue
-				clear
-				run_pkg_upgrade ${_targets}
-				printf '\n'; read -r _dummy < /dev/tty
+				clear; run_pkg_upgrade ${_targets}
+				printf '\n[Enter] でメニューに戻る: '; read -r _d < /dev/tty
 				;;
 			5)
 				_targets="$(menu_select_targets "全操作を実行")" || continue
-				clear
-				run_all_ops ${_targets}
-				printf '\n'; read -r _dummy < /dev/tty
+				clear; run_all_ops ${_targets}
+				printf '\n[Enter] でメニューに戻る: '; read -r _d < /dev/tty
 				;;
 			6)
-				clear
-				cmd_self_update
-				printf '\n'; read -r _dummy < /dev/tty
+				clear; cmd_self_update
+				printf '\n[Enter] でメニューに戻る: '; read -r _d < /dev/tty
 				;;
 			7)
-				dialog --msgbox "FreeBSD Update Helper v${VERSION}" 7 40
+				${_DIALOG_CMD} --msgbox "FreeBSD Update Helper v${VERSION}" 7 44
 				;;
 		esac
 	done
+}
+
+# --- プレーンテキスト版メインメニュー (bsddialog/dialog 不要) ---
+_menu_main_text() {
+	while true; do
+		printf '\n'
+		printf '========================================\n'
+		printf '  FreeBSD Update Helper v%s\n' "${VERSION}"
+		printf '========================================\n'
+		printf '  1) freebsd-update fetch\n'
+		printf '  2) freebsd-update install\n'
+		printf '  3) pkg update\n'
+		printf '  4) pkg upgrade\n'
+		printf '  5) 全操作を順番に実行 (fetch/install/pkg update/upgrade)\n'
+		printf '  6) self-update (GitHub から最新版に更新)\n'
+		printf '  7) バージョン表示\n'
+		printf '  q) 終了\n'
+		printf '----------------------------------------\n'
+		printf '選択: '
+		read -r _choice < /dev/tty
+
+		case "${_choice}" in
+			1)
+				_targets="$(menu_select_targets "freebsd-update fetch")" || continue
+				run_fetch ${_targets}
+				;;
+			2)
+				_targets="$(menu_select_targets "freebsd-update install")" || continue
+				run_install ${_targets}
+				;;
+			3)
+				_targets="$(menu_select_targets "pkg update")" || continue
+				run_pkg_update ${_targets}
+				;;
+			4)
+				_targets="$(menu_select_targets "pkg upgrade")" || continue
+				run_pkg_upgrade ${_targets}
+				;;
+			5)
+				_targets="$(menu_select_targets "全操作を実行")" || continue
+				run_all_ops ${_targets}
+				;;
+			6)
+				cmd_self_update
+				;;
+			7)
+				printf 'FreeBSD Update Helper v%s\n' "${VERSION}"
+				;;
+			q|Q)
+				log_info "終了します。"
+				exit 0
+				;;
+			*)
+				log_warn "無効な選択です: '${_choice}'"
+				;;
+		esac
+	done
+}
+
+# --- メインメニュー: bsddialog/dialog の有無で自動切替 ---
+menu_main() {
+	if [ -n "${_DIALOG_CMD}" ]; then
+		log_info "UI: ${_DIALOG_CMD} を使用します。"
+		_menu_main_dialog
+	else
+		log_warn "bsddialog/dialog が見つかりません。プレーンテキストメニューで起動します。"
+		_menu_main_text
+	fi
 }
 
 # ==============================================================================
@@ -569,28 +690,29 @@ FreeBSD Update Helper v${VERSION}
   $(basename "$0") [コマンド] [対象...]
 
 コマンド:
-  fetch   [all | <jail>...]     freebsd-update fetch を実行
-  install [all | <jail>...]     freebsd-update install を実行
+  fetch   [all | <jail>...]      freebsd-update fetch を実行
+  install [all | <jail>...]      freebsd-update install を実行
   pkg update   [all | <jail>...] pkg update を実行
   pkg upgrade  [all | <jail>...] pkg upgrade を実行
-  all     [all | <jail>...]     上記4操作を順番に全て実行
-  self-update                   GitHub から最新版に自己更新
-  version                       バージョンを表示
-  help                          このヘルプを表示
+  all     [all | <jail>...]      上記4操作を順番に全て実行
+  self-update                    GitHub から最新版に自己更新
+  version                        バージョンを表示
+  help                           このヘルプを表示
 
   ※ 対象に "all" を指定するとホスト + 全実行中 Jail が対象になります。
   ※ 引数なしで起動するとメニュー UI が起動します。
+     (bsddialog または dialog が使えれば ncurses UI、なければテキスト UI)
 
 例:
-  $(basename "$0")                       # メニュー UI を起動
-  $(basename "$0") fetch all             # 全環境に fetch
-  $(basename "$0") fetch web db          # Jail "web" と "db" に fetch
+  $(basename "$0")                        # メニュー UI を起動
+  $(basename "$0") fetch all              # 全環境に fetch
+  $(basename "$0") fetch web db           # Jail "web" と "db" に fetch
   $(basename "$0") install all
   $(basename "$0") pkg update all
   $(basename "$0") pkg upgrade web
-  $(basename "$0") all all               # 全環境に全操作
-  $(basename "$0") all web db            # Jail "web" "db" に全操作
-  $(basename "$0") self-update           # スクリプト自体を更新
+  $(basename "$0") all all                # 全環境に全操作
+  $(basename "$0") all web db             # Jail "web" "db" に全操作
+  $(basename "$0") self-update            # スクリプト自体を更新
 EOF
 }
 
