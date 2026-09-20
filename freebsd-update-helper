@@ -23,7 +23,7 @@
 # ==============================================================================
 
 # --- バージョン情報 ---
-VERSION="1.1.1"
+VERSION="1.1.2"
 
 # --- GitHub 設定 (self-update 用) ---
 GITHUB_USER="qlonix"
@@ -411,49 +411,22 @@ cmd_self_update() {
 # bsddialog (FreeBSD 13.1+ 標準) > dialog > プレーンテキスト の順で自動選択
 # ==============================================================================
 
-# --- ダイアログ版: Jail チェックリスト (複数選択) ---
-_dlg_select_jails() {
+# --- ダイアログ版: ターゲット選択 ($() を使わない直接呼び出し版) ---
+#
+# 【設計の意図】
+# bsddialog を $() (コマンド置換 = サブシェル) の中で実行すると、
+# bsddialog が /dev/tty を ncurses モードに切り替えた状態がサブシェル内に
+# 閉じ込められ、サブシェル終了後も親シェルの端末が壊れたままになる。
+# これにより freebsd-update 等の出力・確認プロンプトが表示されなくなる。
+#
+# この関数は bsddialog を $() の外で直接呼び出し、選択結果を
+# グローバル変数 _PICKED_TARGETS に格納することで問題を回避する。
+_dlg_pick_targets() {
 	_title="$1"
-	_jails="$(get_running_jails)"
+	_PICKED_TARGETS=""
 
-	if [ -z "$(printf '%s' "${_jails}" | tr -d ' ')" ]; then
-		${_DIALOG_CMD} --msgbox "実行中の Jail がありません。" 7 40
-		return 1
-	fi
-
-	# checklist 項目を構築 (tag item status)
-	_items=""
-	for _j in ${_jails}; do
-		_items="${_items} ${_j} 'Jail' off"
-	done
-
+	# --- ステップ1: 全体/個別 を選択 ---
 	_tmpout="$(mktemp /tmp/fbsd-menu.XXXXXX)"
-	eval ${_DIALOG_CMD} \
-		--clear \
-		--title "'${_title}'" \
-		--checklist "'対象を選択 (スペースで選択/解除、Enter で確定):'" \
-		20 60 10 \
-		"host" "'ホスト環境'" "off" \
-		${_items} \
-		2>"${_tmpout}"
-	_ret=$?
-
-	if [ ${_ret} -ne 0 ]; then
-		rm -f "${_tmpout}"
-		return 1
-	fi
-
-	# bsddialog/dialog ともにダブルクォートで出力する場合があるため除去
-	_selected="$(cat "${_tmpout}" | tr -d '"')"
-	rm -f "${_tmpout}"
-	printf '%s' "${_selected}"
-}
-
-# --- ダイアログ版: 全て/個別 サブメニュー ---
-_dlg_select_targets() {
-	_title="$1"
-	_tmpout="$(mktemp /tmp/fbsd-menu.XXXXXX)"
-
 	${_DIALOG_CMD} \
 		--clear \
 		--title "${_title}" \
@@ -469,19 +442,52 @@ _dlg_select_targets() {
 		return 1
 	fi
 
-	_choice="$(cat "${_tmpout}")"
+	_mode="$(cat "${_tmpout}")"
 	rm -f "${_tmpout}"
 
-	if [ "${_choice}" = "all" ]; then
-		printf '%s' "$(build_all_targets)"
-	else
-		_sel="$(_dlg_select_jails "${_title}")" || return 1
-		if [ -z "${_sel}" ]; then
-			${_DIALOG_CMD} --msgbox "対象が選択されていません。" 7 40
-			return 1
-		fi
-		printf '%s' "${_sel}"
+	if [ "${_mode}" = "all" ]; then
+		_PICKED_TARGETS="$(build_all_targets)"
+		return 0
 	fi
+
+	# --- ステップ2: 個別選択 (Jail チェックリスト) ---
+	_jails="$(get_running_jails)"
+	if [ -z "$(printf '%s' "${_jails}" | tr -d ' ')" ]; then
+		${_DIALOG_CMD} --msgbox "実行中の Jail がありません。" 7 40
+		return 1
+	fi
+
+	_items=""
+	for _j in ${_jails}; do
+		_items="${_items} ${_j} 'Jail' off"
+	done
+
+	_tmpout2="$(mktemp /tmp/fbsd-menu.XXXXXX)"
+	eval ${_DIALOG_CMD} \
+		--clear \
+		--title "'${_title}'" \
+		--checklist "'対象を選択 (スペースで選択/解除、Enter で確定):'" \
+		20 60 10 \
+		"host" "'ホスト環境'" "off" \
+		${_items} \
+		2>"${_tmpout2}"
+	_ret=$?
+
+	if [ ${_ret} -ne 0 ]; then
+		rm -f "${_tmpout2}"
+		return 1
+	fi
+
+	_sel="$(cat "${_tmpout2}" | tr -d '"')"
+	rm -f "${_tmpout2}"
+
+	if [ -z "${_sel}" ]; then
+		${_DIALOG_CMD} --msgbox "対象が選択されていません。" 7 40
+		return 1
+	fi
+
+	_PICKED_TARGETS="${_sel}"
+	return 0
 }
 
 # --- テキスト版: Jail 番号選択 ---
@@ -540,13 +546,10 @@ _text_select_targets() {
 	esac
 }
 
-# --- 統合: ダイアログ有無で自動切替 ---
+# --- テキスト版専用: ターゲット選択 ($() で呼んでも問題ない) ---
+# テキスト版は bsddialog を使わないため $() 内で呼び出しても端末が壊れない
 menu_select_targets() {
-	if [ -n "${_DIALOG_CMD}" ]; then
-		_dlg_select_targets "$1"
-	else
-		_text_select_targets "$1"
-	fi
+	_text_select_targets "$1"
 }
 
 # --- ダイアログ版メインメニュー ---
@@ -554,6 +557,7 @@ _menu_main_dialog() {
 	while true; do
 		_tmpout="$(mktemp /tmp/fbsd-menu.XXXXXX)"
 
+		# メインメニューも $() 外で直接呼び出す
 		${_DIALOG_CMD} \
 			--clear \
 			--title "FreeBSD Update Helper v${VERSION}" \
@@ -580,31 +584,31 @@ _menu_main_dialog() {
 			exit 0
 		fi
 
+		# bsddialog を $() 外で呼び出し、端末状態を保護してからコマンドを実行する
 		case "${_choice}" in
 			1)
-				_targets="$(menu_select_targets "freebsd-update fetch")" || continue
-				# ダイアログ終了後に端末状態を正常に戻してからコマンドを実行
-				reset_tty; clear; run_fetch ${_targets}
+				_dlg_pick_targets "freebsd-update fetch" || continue
+				reset_tty; clear; run_fetch ${_PICKED_TARGETS}
 				printf '\n[Enter] でメニューに戻る: '; read -r _d < /dev/tty
 				;;
 			2)
-				_targets="$(menu_select_targets "freebsd-update install")" || continue
-				reset_tty; clear; run_install ${_targets}
+				_dlg_pick_targets "freebsd-update install" || continue
+				reset_tty; clear; run_install ${_PICKED_TARGETS}
 				printf '\n[Enter] でメニューに戻る: '; read -r _d < /dev/tty
 				;;
 			3)
-				_targets="$(menu_select_targets "pkg update")" || continue
-				reset_tty; clear; run_pkg_update ${_targets}
+				_dlg_pick_targets "pkg update" || continue
+				reset_tty; clear; run_pkg_update ${_PICKED_TARGETS}
 				printf '\n[Enter] でメニューに戻る: '; read -r _d < /dev/tty
 				;;
 			4)
-				_targets="$(menu_select_targets "pkg upgrade")" || continue
-				reset_tty; clear; run_pkg_upgrade ${_targets}
+				_dlg_pick_targets "pkg upgrade" || continue
+				reset_tty; clear; run_pkg_upgrade ${_PICKED_TARGETS}
 				printf '\n[Enter] でメニューに戻る: '; read -r _d < /dev/tty
 				;;
 			5)
-				_targets="$(menu_select_targets "全操作を実行")" || continue
-				reset_tty; clear; run_all_ops ${_targets}
+				_dlg_pick_targets "全操作を実行" || continue
+				reset_tty; clear; run_all_ops ${_PICKED_TARGETS}
 				printf '\n[Enter] でメニューに戻る: '; read -r _d < /dev/tty
 				;;
 			6)
