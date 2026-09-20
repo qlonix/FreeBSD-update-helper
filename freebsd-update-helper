@@ -23,7 +23,7 @@
 # ==============================================================================
 
 # --- バージョン情報 ---
-VERSION="1.1.0"
+VERSION="1.1.1"
 
 # --- GitHub 設定 (self-update 用) ---
 GITHUB_USER="qlonix"
@@ -75,6 +75,13 @@ print_section() {
 	printf '\n\033[1;36m========================================\033[0m\n'
 	printf '\033[1;36m  %s\033[0m\n' "$*"
 	printf '\033[1;36m========================================\033[0m\n\n'
+}
+
+# 端末状態をリセットする
+# bsddialog/dialog はカーソル制御のため端末を raw モード等に変更する。
+# コマンド実行前にこの関数を呼んで端末を通常状態に戻す。
+reset_tty() {
+	stty sane 2>/dev/null || true
 }
 
 # root 権限チェック
@@ -576,31 +583,32 @@ _menu_main_dialog() {
 		case "${_choice}" in
 			1)
 				_targets="$(menu_select_targets "freebsd-update fetch")" || continue
-				clear; run_fetch ${_targets}
+				# ダイアログ終了後に端末状態を正常に戻してからコマンドを実行
+				reset_tty; clear; run_fetch ${_targets}
 				printf '\n[Enter] でメニューに戻る: '; read -r _d < /dev/tty
 				;;
 			2)
 				_targets="$(menu_select_targets "freebsd-update install")" || continue
-				clear; run_install ${_targets}
+				reset_tty; clear; run_install ${_targets}
 				printf '\n[Enter] でメニューに戻る: '; read -r _d < /dev/tty
 				;;
 			3)
 				_targets="$(menu_select_targets "pkg update")" || continue
-				clear; run_pkg_update ${_targets}
+				reset_tty; clear; run_pkg_update ${_targets}
 				printf '\n[Enter] でメニューに戻る: '; read -r _d < /dev/tty
 				;;
 			4)
 				_targets="$(menu_select_targets "pkg upgrade")" || continue
-				clear; run_pkg_upgrade ${_targets}
+				reset_tty; clear; run_pkg_upgrade ${_targets}
 				printf '\n[Enter] でメニューに戻る: '; read -r _d < /dev/tty
 				;;
 			5)
 				_targets="$(menu_select_targets "全操作を実行")" || continue
-				clear; run_all_ops ${_targets}
+				reset_tty; clear; run_all_ops ${_targets}
 				printf '\n[Enter] でメニューに戻る: '; read -r _d < /dev/tty
 				;;
 			6)
-				clear; cmd_self_update
+				reset_tty; clear; cmd_self_update
 				printf '\n[Enter] でメニューに戻る: '; read -r _d < /dev/tty
 				;;
 			7)
