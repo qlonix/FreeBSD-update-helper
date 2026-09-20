@@ -36,11 +36,18 @@ pkg install -y dialog
 ## インストール
 
 ```sh
-# リポジトリをクローン
+# リポジトリをクローン (一般ユーザーで実行可、sudo 不要)
 git clone https://github.com/qlonix/FreeBSD-update-helper.git
 
-# スクリプトをシステムパスに配置
-install -m 755 FreeBSD-update-helper/freebsd-update-helper /usr/local/sbin/freebsd-update-helper
+# スクリプトをシステムパスに配置 (root 権限が必要)
+# FreeBSD では su / doas / sudo いずれかで実行してください
+su -c 'install -m 755 FreeBSD-update-helper/freebsd-update-helper /usr/local/sbin/freebsd-update-helper'
+
+# doas を使う場合
+# doas install -m 755 FreeBSD-update-helper/freebsd-update-helper /usr/local/sbin/freebsd-update-helper
+
+# sudo を使う場合
+# sudo install -m 755 FreeBSD-update-helper/freebsd-update-helper /usr/local/sbin/freebsd-update-helper
 ```
 
 ---
