@@ -1,0 +1,11 @@
+# バックアップファイル
+*.bak
+*.orig
+
+# 一時ファイル
+/tmp/fbsd-menu.*
+/tmp/freebsd-update-helper.*
+
+# OS 生成ファイル
+.DS_Store
+Thumbs.db
