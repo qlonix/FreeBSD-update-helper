@@ -142,10 +142,4 @@ freebsd-update-helper version
 
 ## ライセンス
 
-BSD 2-Clause License
-
----
-
-## 貢献
-
-Issue や Pull Request は歓迎します。
+[BSD 2-Clause License](LICENSE)
